@@ -6,7 +6,7 @@ package chat;
 
 // --- Common Enums and Messages ---
 
-// Status values correspond to your custom Status flags.
+// Status values
 enum Status {
   PENDING = 0;
   SUCCESS = 1;
