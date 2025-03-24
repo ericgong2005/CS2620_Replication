@@ -12,17 +12,18 @@ import subprocess
 import grpc
 import chat_pb2
 import chat_pb2_grpc
-from Constants import DATABASE_DIRECTORY, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
+from Constants import HEARTBEAT_INTERVAL, DATABASE_DIRECTORY, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
 
 class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def __init__(self, address, leader_stub, process_list, password_database_path, message_database_path):
-        self.online_username = {}
+        self.online_username = []
         self.process_list = process_list
         self.address = address
         self.leader_stub = leader_stub
+        self.follower_stubs = {}
 
-        if leader_stub != None:
-            response = leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest())
+        if self.leader_stub != None:
+            response = self.leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest())
             if response.status == chat_pb2.Status.SUCCESS:
                 new_subdir = f"Database_{address}"
                 output_dir = os.path.join("Databases", new_subdir)
@@ -62,6 +63,64 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def _signal_handler(self, signum, frame):
         self.close()
         sys.exit(0) 
+    
+    def SerializeDatabase(self):
+        self.close()
+
+        with open(self.password_database_path, "rb") as password_database_file:
+            serialized_password_database = password_database_file.read()
+        with open(self.message_database_path, "rb") as message_database_file:
+            serialized_message_database = message_database_file.read()
+        
+        self.open()
+        return (serialized_password_database, serialized_message_database)
+
+    def PushChanges(self, database=False):
+        print(f"Begin Pushing Changes to {self.process_list[1:]}")
+        if self.leader_stub != None: # Error, should not be pushing changes as follower
+            print("Inappropriate Change pushing")
+            sys.exit(1)
+
+        stub_dict = {}
+        for follower in self.process_list[1:]:
+            if follower not in self.follower_stubs:
+                try:
+                    channel = grpc.insecure_channel(follower)
+                    temp_stub = chat_pb2_grpc.ChatServiceStub(channel)
+                    grpc.channel_ready_future(channel).result(timeout=1)
+                    self.follower_stubs[follower] = temp_stub
+                    print(f"\tFollower {follower} found")
+                except (grpc._channel._InactiveRpcError, grpc.FutureTimeoutError):
+                    self.process_list.remove(follower)
+                    print(f"\tFollower {follower} lost")
+        
+        print(f"\tFollowers {self.process_list[1:]} reached")
+
+        if database:
+            serialized_password_database, serialized_message_database = self.SerializeDatabase()
+
+        success = True
+        for follower in self.process_list[1:]:
+            try:
+                self.follower_stubs[follower].PushState(chat_pb2.PushStateRequest(
+                    online_username = self.online_username,
+                    process_list = self.process_list))
+                if database:
+                    self.follower_stubs[follower].PushDatabase(chat_pb2.PushDatabaseRequest(
+                        password_database = serialized_password_database,
+                        message_database = serialized_message_database))
+            except (grpc._channel._InactiveRpcError, grpc.RpcError):
+                self.process_list.remove(follower)
+                del self.follower_stubs[follower]
+                success = False
+        
+        print(f"\tFinished pushing to {self.process_list[1:]}")
+        
+        return success
+
+    '''
+    gRPC Functions
+    '''
 
     # User Account Management
     
@@ -91,6 +150,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         try:
             self.passwords_cursor.execute("INSERT INTO Passwords (Username, Password) VALUES (?, ?)", (request.username, request.password))
             self.passwords.commit()
+            while not self.PushChanges(True) : pass # Push changes until consistency
             return chat_pb2.CreateUserResponse(status=chat_pb2.Status.SUCCESS)
         except sqlite3.IntegrityError:
             return chat_pb2.CreateUserResponse(status=chat_pb2.Status.MATCH)
@@ -108,7 +168,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             num_unread_msgs=0, 
             num_total_msgs=0)
         else:
-            self.online_username[request.username] = queue.Queue()
+            self.online_username.append(request.username)
 
             self.messages_cursor.execute(
             "SELECT COUNT(*) FROM Messages WHERE Recipient = ? AND Read = 0;", (request.username,))
@@ -116,6 +176,8 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             self.messages_cursor.execute(
                 "SELECT COUNT(*) FROM Messages WHERE Recipient = ?", (request.username,))
             total = self.messages_cursor.fetchone()[0]
+
+            while not self.PushChanges(False) : pass # Push changes until consistency
             return chat_pb2.ConfirmLoginResponse(
                 status=chat_pb2.Status.SUCCESS, 
                 num_unread_msgs=unread, 
@@ -125,12 +187,13 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def ConfirmLogout(self, request, context):
         print(f"Confirming Logout given {request}")
         if request.username in self.online_username:
-            del self.online_username[request.username]
+            self.online_username.remove(request.username)
+            while not self.PushChanges(False) : pass # Push changes until consistency
         return chat_pb2.ConfirmLogoutResponse(status=chat_pb2.Status.SUCCESS)
 
     def GetOnlineUsers(self, request, context):
         print(f"Getting Online Users")
-        return chat_pb2.GetOnlineUsersResponse(status=chat_pb2.Status.SUCCESS, users=list(self.online_username.keys()))
+        return chat_pb2.GetOnlineUsersResponse(status=chat_pb2.Status.SUCCESS, users=self.online_username)
 
     def GetUsers(self, request, context):
         print(f"Getting Users given {request}")
@@ -155,8 +218,9 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             )
             request.message.id = self.messages_cursor.lastrowid
             self.messages.commit()
-            if request.message.recipient in self.online_username:
-                self.online_username[request.message.recipient].put(request.message)
+            print("Message Saved to Leader Database")
+            while not self.PushChanges(True) : pass # Push changes until consistency
+            print(f"Message Saved to All {self.process_list}")
             return chat_pb2.SendMessageResponse(status=chat_pb2.Status.SUCCESS)
         except sqlite3.IntegrityError:
             return chat_pb2.SendMessageResponse(status=chat_pb2.Status.ERROR)
@@ -192,6 +256,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.ConfirmReadResponse(status=chat_pb2.Status.ERROR)
         self.messages_cursor.execute(f"UPDATE Messages SET Read = 1 WHERE Recipient = ? AND Id = ?", (request.username, request.message_id,))
         self.messages.commit()
+        while not self.PushChanges(True) : pass # Push changes until consistency
         return chat_pb2.ConfirmReadResponse(status=chat_pb2.Status.SUCCESS)
 
     def DeleteMessage(self, request, context):
@@ -204,6 +269,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             values.append(int(id))
         self.messages_cursor.execute(f"DELETE FROM Messages WHERE Id IN ({format})", values)
         self.messages.commit()
+        while not self.PushChanges(True) : pass # Push changes until consistency
         return chat_pb2.DeleteMessageResponse(status=chat_pb2.Status.SUCCESS)
 
     def DeleteUser(self, request, context):
@@ -217,21 +283,36 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         if self.passwords_cursor.rowcount == 0:
             return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.ERROR)
         self.passwords.commit()
+        while not self.PushChanges(True) : pass # Push changes until consistency
         return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.SUCCESS)
     
     # Replication
     def GetDatabases(self, request, context):
-        self.close()
-
-        with open(self.password_database_path, "rb") as password_database_file:
-            serialized_password_database = password_database_file.read()
-        with open(self.message_database_path, "rb") as message_database_file:
-            serialized_message_database = message_database_file.read()
-        
-        self.open()
+        serialized_password_database, serialized_message_database = self.SerializeDatabase()
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
                                              password_database=serialized_password_database, 
                                              message_database=serialized_message_database)
+    
+    def PushState(self, request, context):
+        print(f"Recieved State Push")
+        self.online_username = request.online_username
+        self.process_list = request.process_list
+        if self.address not in self.process_list:
+            print("Left behind, Terminating")
+            sys.exit(1)
+        return chat_pb2.PushStateResponse(status=chat_pb2.Status.SUCCESS)
+
+    def PushDatabase(self, request, context):
+        print(f"Recieved Database Push")
+        self.close()
+
+        with open(self.password_database_path, "wb") as f:
+            f.write(request.password_database)
+        with open(self.message_database_path, "wb") as f:
+            f.write(request.message_database)
+        
+        self.open()
+        return chat_pb2.PushDatabaseResponse(status=chat_pb2.Status.SUCCESS)
     
     def Heartbeat(self, request, context):
         return chat_pb2.HeartbeatResponse(status=chat_pb2.Status.SUCCESS)
@@ -363,7 +444,7 @@ if __name__ == '__main__':
         if leader_stub == None:
             leader_stub = self_stub
         while True:
-            time.sleep(0.1)
+            time.sleep(HEARTBEAT_INTERVAL)
             try:
                 leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
             except grpc._channel._InactiveRpcError: # Leader has died!

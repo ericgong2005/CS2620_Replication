@@ -101,6 +101,16 @@ class ChatServiceStub(object):
                 request_serializer=chat__pb2.GetDatabasesRequest.SerializeToString,
                 response_deserializer=chat__pb2.GetDatabasesResponse.FromString,
                 _registered_method=True)
+        self.PushState = channel.unary_unary(
+                '/chat.ChatService/PushState',
+                request_serializer=chat__pb2.PushStateRequest.SerializeToString,
+                response_deserializer=chat__pb2.PushStateResponse.FromString,
+                _registered_method=True)
+        self.PushDatabase = channel.unary_unary(
+                '/chat.ChatService/PushDatabase',
+                request_serializer=chat__pb2.PushDatabaseRequest.SerializeToString,
+                response_deserializer=chat__pb2.PushDatabaseResponse.FromString,
+                _registered_method=True)
         self.Heartbeat = channel.unary_unary(
                 '/chat.ChatService/Heartbeat',
                 request_serializer=chat__pb2.HeartbeatRequest.SerializeToString,
@@ -199,6 +209,18 @@ class ChatServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PushState(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def PushDatabase(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
     def Heartbeat(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
@@ -278,6 +300,16 @@ def add_ChatServiceServicer_to_server(servicer, server):
                     servicer.GetDatabases,
                     request_deserializer=chat__pb2.GetDatabasesRequest.FromString,
                     response_serializer=chat__pb2.GetDatabasesResponse.SerializeToString,
+            ),
+            'PushState': grpc.unary_unary_rpc_method_handler(
+                    servicer.PushState,
+                    request_deserializer=chat__pb2.PushStateRequest.FromString,
+                    response_serializer=chat__pb2.PushStateResponse.SerializeToString,
+            ),
+            'PushDatabase': grpc.unary_unary_rpc_method_handler(
+                    servicer.PushDatabase,
+                    request_deserializer=chat__pb2.PushDatabaseRequest.FromString,
+                    response_serializer=chat__pb2.PushDatabaseResponse.SerializeToString,
             ),
             'Heartbeat': grpc.unary_unary_rpc_method_handler(
                     servicer.Heartbeat,
@@ -643,6 +675,60 @@ class ChatService(object):
             '/chat.ChatService/GetDatabases',
             chat__pb2.GetDatabasesRequest.SerializeToString,
             chat__pb2.GetDatabasesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PushState(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/chat.ChatService/PushState',
+            chat__pb2.PushStateRequest.SerializeToString,
+            chat__pb2.PushStateResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PushDatabase(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/chat.ChatService/PushDatabase',
+            chat__pb2.PushDatabaseRequest.SerializeToString,
+            chat__pb2.PushDatabaseResponse.FromString,
             options,
             channel_credentials,
             insecure,

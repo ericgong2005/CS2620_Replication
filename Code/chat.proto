@@ -17,7 +17,7 @@ enum Status {
 
 // --- User Account Related RPCs ---
 
-// Check if a username exists.
+// Check if a username exists. READ
 message CheckUsernameRequest {
   string username = 1;
 }
@@ -25,7 +25,7 @@ message CheckUsernameResponse {
   Status status = 1;
 }
 
-// Check a user's password.
+// Check a user's password. READ
 message CheckPasswordRequest {
   string username = 1;
   string password = 2;
@@ -34,7 +34,7 @@ message CheckPasswordResponse {
   Status status = 1;
 }
 
-// Create a new user.
+// Create a new user. WRITE
 message CreateUserRequest {
   string username = 1;
   string password = 2;
@@ -43,7 +43,7 @@ message CreateUserResponse {
   Status status = 1;
 }
 
-// Confirm login (and mark user as online).
+// Confirm login (and mark user as online). WRITE
 message ConfirmLoginRequest {
   string username = 1;
 }
@@ -53,7 +53,7 @@ message ConfirmLoginResponse {
   int64 num_total_msgs = 3;
 }
 
-// Confirm logout (and mark user as offline).
+// Confirm logout (and mark user as offline). WRITE
 message ConfirmLogoutRequest {
   string username = 1;
 }
@@ -61,14 +61,14 @@ message ConfirmLogoutResponse {
   Status status = 1;
 }
 
-// Get the list of currently online users.
+// Get the list of currently online users. READ
 message GetOnlineUsersRequest {}
 message GetOnlineUsersResponse {
   Status status = 1;
   repeated string users = 2;
 }
 
-// Get all registered users.
+// Get all registered users. READ
 message GetUsersRequest {
   string query = 1;
 }
@@ -90,7 +90,7 @@ message MessageObject {
   string body = 7;
 }
 
-// Send a message.
+// Send a message. WRITE
 message SendMessageRequest {
   MessageObject message = 1;
 }
@@ -98,7 +98,7 @@ message SendMessageResponse {
   Status status = 1;
 }
 
-// Retrieve a specific message.
+// Retrieve a specific message. READ
 message GetMessageRequest {
   int64 offset = 1;
   int64 limit = 2;
@@ -110,7 +110,7 @@ message GetMessageResponse {
   repeated MessageObject messages = 2;
 }
 
-// Confirm that a message has been read.
+// Confirm that a message has been read. WRITE
 message ConfirmReadRequest {
   int64 message_id = 1;
   string username = 2;
@@ -119,7 +119,7 @@ message ConfirmReadResponse {
   Status status = 1;
 }
 
-// Delete a specific message.
+// Delete a specific message. WRITE
 message DeleteMessageRequest {
   repeated int64 message_id = 1;
 }
@@ -127,7 +127,7 @@ message DeleteMessageResponse {
   Status status = 1;
 }
 
-// Delete a user account.
+// Delete a user account. WRITE
 message DeleteUserRequest {
   string username = 1;
 }
@@ -144,6 +144,25 @@ message GetDatabasesResponse {
   bytes password_database = 2;
   bytes message_database = 3;
 }
+
+// Leader Push state to followers (online users, process_list)
+message PushStateRequest{
+  repeated string online_username = 1;
+  repeated string process_list = 2;
+}
+message PushStateResponse {
+  Status status = 1;
+}
+
+// Leader Push database to followers
+message PushDatabaseRequest{
+  bytes password_database = 1;
+  bytes message_database = 2;
+}
+message PushDatabaseResponse {
+  Status status = 1;
+}
+
 
 // Heartbeat
 message HeartbeatRequest {}
@@ -183,6 +202,8 @@ service ChatService {
 
   // Replication
   rpc GetDatabases(GetDatabasesRequest) returns (GetDatabasesResponse);
+  rpc PushState(PushStateRequest) returns (PushStateResponse);
+  rpc PushDatabase(PushDatabaseRequest) returns (PushDatabaseResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
   rpc LeaderDeath(LeaderDeathRequest) returns (LeaderDeathResponse);
 }

@@ -8,10 +8,38 @@ import os
 import chat_pb2
 import chat_pb2_grpc
 
-def client_user(stub, username):
+def new_leader_stub(process_list):
+    process_list = process_list[1:]
+    leader_stub = None
+    print(f"Finding leader from {process_list}")
+    while (leader_stub == None) and (len(process_list) > 0):
+        try:
+            channel = grpc.insecure_channel(process_list[0])
+            leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
+            # 1 second to connect to potential new leader
+            grpc.channel_ready_future(channel).result(timeout=1)
+            print(f"Client connected to leader {process_list[0]}")
+            break
+        except (grpc._channel._InactiveRpcError, grpc.FutureTimeoutError):
+            leader_stub = None
+            process_list = process_list[1:]
+    if leader_stub == None:  # Could not find new leader
+        raise Exception("Could not find new leader")
+    else: # Confirm the leader
+        try:
+            leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+        except grpc._channel._InactiveRpcError:
+            raise Exception("Could not confirm new leader")
+    return (leader_stub, process_list)
+
+def client_user(stub, process_list, username):
     # Confirm login via gRPC.
     try:
         login_response = stub.ConfirmLogin(chat_pb2.ConfirmLoginRequest(username=username))
+    except grpc._channel._InactiveRpcError:
+        stub, process_list = new_leader_stub(process_list)
+        print("Connected to new leader, try again")
+        return
     except grpc.RpcError as e:
         print("Error during ConfirmLogin:", e)
         return
@@ -43,6 +71,9 @@ def client_user(stub, username):
                     print("Online users:", response.users)
                 else:
                     print("Failed to get online users.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -65,6 +96,9 @@ def client_user(stub, username):
                         print(f"Message {msg.id} from {msg.sender} at {msg.time_sent}:\n {msg.subject}\n {msg.body}\n (Read: {msg.read})")
                 else:
                     print("Failed to get messages.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except Exception as e:
                 print("Error processing msg command:", e)
 
@@ -76,6 +110,9 @@ def client_user(stub, username):
                     print("Registered users:", response.users)
                 else:
                     print("Failed to get users.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -90,6 +127,9 @@ def client_user(stub, username):
                     print("Users matching pattern:", response.users)
                 else:
                     print("Failed to get users with pattern.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -102,6 +142,9 @@ def client_user(stub, username):
                     return
                 else:
                     print("Failed to delete user.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -114,6 +157,9 @@ def client_user(stub, username):
                     return
                 else:
                     print("Logout failed.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
                 return
@@ -132,6 +178,9 @@ def client_user(stub, username):
                     print(f"Message {message_id} marked as read.")
                 else:
                     print("Failed to mark message as read.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -147,6 +196,9 @@ def client_user(stub, username):
                     print("Message(s) deleted successfully.")
                 else:
                     print("Failed to delete messages.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -173,6 +225,9 @@ def client_user(stub, username):
                     print("Message sent successfully.")
                 else:
                     print("Failed to send message.")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
@@ -195,13 +250,16 @@ def client_user(stub, username):
 
                 else:
                     print("Failed to Retrieve Databases")
+            except grpc._channel._InactiveRpcError:
+                stub, process_list = new_leader_stub(process_list)
+                print("Connected to new leader, try again")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
         else:
             print("Unknown command.")
 
-def client_create_user(stub):
+def client_create_user(stub, process_list):
     while True:
         print("Create New User:")
         username = input("Enter Username: ")
@@ -221,10 +279,13 @@ def client_create_user(stub):
                 return username
             else:
                 print("Error creating user.")
+        except grpc._channel._InactiveRpcError:
+            stub, process_list = new_leader_stub(process_list)
+            print("Connected to new leader, try again")
         except grpc.RpcError as e:
             print("RPC error:", e)
 
-def client_login(stub):
+def client_login(stub, process_list):
     while True:
         print("Login:")
         username = input("Enter Username: ")
@@ -234,10 +295,13 @@ def client_login(stub):
                 break
             elif response.status == chat_pb2.Status.NO_MATCH:
                 print("No such username exists. Creating new user.")
-                username = client_create_user(stub)
+                username = client_create_user(stub, process_list)
                 break
             else:
                 print("Error checking username.")
+        except grpc._channel._InactiveRpcError:
+            stub, process_list = new_leader_stub(process_list)
+            print("Connected to new leader, try again")
         except grpc.RpcError as e:
             print("RPC error:", e)
             return
@@ -249,26 +313,37 @@ def client_login(stub):
             response = stub.CheckPassword(chat_pb2.CheckPasswordRequest(username=username, password=hashed_password))
             if response.status == chat_pb2.Status.MATCH:
                 print("Logging In")
-                client_user(stub, username)
+                client_user(stub, process_list, username)
                 return
             elif response.status == chat_pb2.Status.NO_MATCH:
                 print("Wrong Password.")
             else:
                 print("Error checking password.")
+        except grpc._channel._InactiveRpcError:
+            stub, process_list = new_leader_stub(process_list)
+            print("Connected to new leader, try again")
         except grpc.RpcError as e:
             print("RPC error:", e)
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python client.py HOSTNAME PORT")
-        exit(1)
-    host, port = sys.argv[1], sys.argv[2]
+    if len(sys.argv) < 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
+        sys.exit(1)
+    address, other_count = sys.argv[1], int(sys.argv[2])
+    if len(sys.argv) != other_count + 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
+        sys.exit(1)
+    others = sys.argv[3:]
+
     # Create a gRPC channel and stub.
-    channel = grpc.insecure_channel(f"{host}:{port}")
+    channel = grpc.insecure_channel(address)
     stub = chat_pb2_grpc.ChatServiceStub(channel)
-    
+
+    process_list = others + [address]
+    process_list.sort()
     while True:
-        client_login(stub)
+        client_login(stub, process_list)
+    
 
 # Example code for subprocess
 # import subprocess
