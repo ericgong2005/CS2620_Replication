@@ -177,10 +177,13 @@ def client_user(stub, username):
                 print("RPC error:", e)
 
         elif lines[0] == "database":
+            if len(lines) < 2:
+                print("Usage: database database_name")
+                continue
             try:
                 response = stub.GetDatabases(chat_pb2.GetDatabasesRequest())
                 if response.status == chat_pb2.Status.SUCCESS:
-                    new_subdir = "Database_test"
+                    new_subdir = f"Database_{lines[1]}"
                     output_dir = os.path.join("Databases", new_subdir)
                     os.makedirs(output_dir, exist_ok=True)
                     password_database_path = os.path.join(output_dir, "passwords.db")
@@ -266,4 +269,3 @@ if __name__ == "__main__":
     
     while True:
         client_login(stub)
-        # After logout or deletion, you might want to allow another login.

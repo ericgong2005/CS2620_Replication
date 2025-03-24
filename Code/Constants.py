@@ -4,6 +4,7 @@ This file contains constants used by the GRPC Database Manager
 
 from pathlib import Path
 
+DATABASE_DIRECTORY = Path(__file__).parent / "Databases"
 PASSWORD_DATABASE = Path(__file__).parent / "Databases/Database_test/passwords.db"
 MESSAGES_DATABASE = Path(__file__).parent / "Databases/Database_test/messages.db"
 PASSWORD_DATABASE_SCHEMA = "Passwords (Username TEXT PRIMARY KEY, Password TEXT NOT NULL)"

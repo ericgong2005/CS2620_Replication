@@ -5,11 +5,13 @@ import sqlite3
 import atexit
 import signal
 import sys
+import os
+import shutil
 
 import grpc
 import chat_pb2
 import chat_pb2_grpc
-from Constants import PASSWORD_DATABASE, MESSAGES_DATABASE, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
+from Constants import DATABASE_DIRECTORY, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
 
 class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def __init__(self, password_database_path, message_database_path):
@@ -214,6 +216,30 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                                              password_database=serialized_password_database, 
                                              message_database=serialized_message_database)
 
+def RenameDatabaseDirectory(current_name):
+    rename = os.path.join(DATABASE_DIRECTORY, "Database_Master")
+    if os.path.exists(rename):
+        shutil.rmtree(rename)
+    os.rename(current_name, rename)
+    return rename
+
+def MostRecentDatabase():
+    instance_directories = [
+        os.path.join(DATABASE_DIRECTORY, instances)
+        for instances in os.listdir(DATABASE_DIRECTORY)
+        if os.path.isdir(os.path.join(DATABASE_DIRECTORY, instances))
+    ]
+    
+    if not instance_directories:
+        raise Exception("No Databases present")
+
+    most_recent_instance = max(instance_directories, key=os.path.getmtime)
+
+    for subdir in instance_directories:
+        if subdir != most_recent_instance:
+            shutil.rmtree(subdir)
+    
+    return RenameDatabaseDirectory(most_recent_instance)
 
 if __name__ == '__main__':
      # Confirm validity of commandline arguments
@@ -222,8 +248,15 @@ if __name__ == '__main__':
         sys.exit(1)
     host, port = sys.argv[1], sys.argv[2]
 
+    database_directory = MostRecentDatabase()
+    password_database_path = os.path.join(database_directory, "passwords.db")
+    message_database_path = os.path.join(database_directory, "messages.db")
+
+    if not (os.path.isfile(password_database_path) and os.path.isfile(message_database_path)):
+        raise Exception(f"Missing messages.db or passwords.db in {database_directory}")
+
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
-    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(PASSWORD_DATABASE, MESSAGES_DATABASE), server)
+    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(password_database_path, message_database_path), server)
     server.add_insecure_port(f"{host}:{port}")
     server.start()
     print(f"gRPC Server started on {host}:{port}")
