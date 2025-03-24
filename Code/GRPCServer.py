@@ -12,23 +12,29 @@ import chat_pb2_grpc
 from Constants import PASSWORD_DATABASE, MESSAGES_DATABASE, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
 
 class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
-    def __init__(self):
+    def __init__(self, password_database_path, message_database_path):
         self.online_username = {}
 
-        self.passwords = sqlite3.connect(PASSWORD_DATABASE, check_same_thread=False)
-        self.passwords_cursor = self.passwords.cursor()
-        self.passwords_cursor.execute(f"CREATE TABLE IF NOT EXISTS {PASSWORD_DATABASE_SCHEMA}")
-        self.passwords.commit()
+        self.password_database_path = password_database_path
+        self.message_database_path = message_database_path
 
-        self.messages = sqlite3.connect(MESSAGES_DATABASE, check_same_thread=False)
-        self.messages_cursor = self.messages.cursor()
-        self.messages_cursor.execute(f"CREATE TABLE IF NOT EXISTS {MESSAGES_DATABASE_SCHEMA}")
-        self.messages.commit()
+        self.open()
 
         # Handle kills and interupts by closing
         atexit.register(self.close)
         signal.signal(signal.SIGTERM, self._signal_handler)
-        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGINT, self._signal_handler) 
+    
+    def open(self):
+        self.passwords = sqlite3.connect(self.password_database_path, check_same_thread=False)
+        self.passwords_cursor = self.passwords.cursor()
+        self.passwords_cursor.execute(f"CREATE TABLE IF NOT EXISTS {PASSWORD_DATABASE_SCHEMA}")
+        self.passwords.commit()
+
+        self.messages = sqlite3.connect(self.message_database_path, check_same_thread=False)
+        self.messages_cursor = self.messages.cursor()
+        self.messages_cursor.execute(f"CREATE TABLE IF NOT EXISTS {MESSAGES_DATABASE_SCHEMA}")
+        self.messages.commit()
 
     def close(self):
         self.passwords.close()
@@ -193,6 +199,21 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.ERROR)
         self.passwords.commit()
         return chat_pb2.DeleteUserResponse(status=chat_pb2.Status.SUCCESS)
+    
+    # Replication
+    def GetDatabases(self, request, context):
+        self.close()
+
+        with open(self.password_database_path, "rb") as password_database_file:
+            serialized_password_database = password_database_file.read()
+        with open(self.message_database_path, "rb") as message_database_file:
+            serialized_message_database = message_database_file.read()
+        
+        self.open()
+        return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
+                                             password_database=serialized_password_database, 
+                                             message_database=serialized_message_database)
+
 
 if __name__ == '__main__':
      # Confirm validity of commandline arguments
@@ -202,7 +223,7 @@ if __name__ == '__main__':
     host, port = sys.argv[1], sys.argv[2]
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
-    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(), server)
+    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(PASSWORD_DATABASE, MESSAGES_DATABASE), server)
     server.add_insecure_port(f"{host}:{port}")
     server.start()
     print(f"gRPC Server started on {host}:{port}")

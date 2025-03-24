@@ -96,6 +96,11 @@ class ChatServiceStub(object):
                 request_serializer=chat__pb2.DeleteUserRequest.SerializeToString,
                 response_deserializer=chat__pb2.DeleteUserResponse.FromString,
                 _registered_method=True)
+        self.GetDatabases = channel.unary_unary(
+                '/chat.ChatService/GetDatabases',
+                request_serializer=chat__pb2.GetDatabasesRequest.SerializeToString,
+                response_deserializer=chat__pb2.GetDatabasesResponse.FromString,
+                _registered_method=True)
 
 
 class ChatServiceServicer(object):
@@ -177,6 +182,13 @@ class ChatServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetDatabases(self, request, context):
+        """Replication
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ChatServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -239,6 +251,11 @@ def add_ChatServiceServicer_to_server(servicer, server):
                     servicer.DeleteUser,
                     request_deserializer=chat__pb2.DeleteUserRequest.FromString,
                     response_serializer=chat__pb2.DeleteUserResponse.SerializeToString,
+            ),
+            'GetDatabases': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetDatabases,
+                    request_deserializer=chat__pb2.GetDatabasesRequest.FromString,
+                    response_serializer=chat__pb2.GetDatabasesResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -567,6 +584,33 @@ class ChatService(object):
             '/chat.ChatService/DeleteUser',
             chat__pb2.DeleteUserRequest.SerializeToString,
             chat__pb2.DeleteUserResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetDatabases(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/chat.ChatService/GetDatabases',
+            chat__pb2.GetDatabasesRequest.SerializeToString,
+            chat__pb2.GetDatabasesResponse.FromString,
             options,
             channel_credentials,
             insecure,

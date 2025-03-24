@@ -135,6 +135,17 @@ message DeleteUserResponse {
   Status status = 1;
 }
 
+// --- Replication RPCs ---
+
+// Get a serialized copy of the database
+message GetDatabasesRequest {}
+message GetDatabasesResponse {
+  Status status = 1;
+  bytes password_database = 2;
+  bytes message_database = 3;
+}
+
+
 // --- Service Definition ---
 
 service ChatService {
@@ -153,4 +164,7 @@ service ChatService {
   rpc ConfirmRead(ConfirmReadRequest) returns (ConfirmReadResponse);
   rpc DeleteMessage(DeleteMessageRequest) returns (DeleteMessageResponse);
   rpc DeleteUser(DeleteUserRequest) returns (DeleteUserResponse);
+
+  // Replication
+  rpc GetDatabases(GetDatabasesRequest) returns (GetDatabasesResponse);
 }

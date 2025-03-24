@@ -2,6 +2,7 @@ import sys
 import grpc
 import hashlib
 from datetime import datetime, timezone
+import os
 
 # Import the generated gRPC modules.
 import chat_pb2
@@ -172,6 +173,25 @@ def client_user(stub, username):
                     print("Message sent successfully.")
                 else:
                     print("Failed to send message.")
+            except grpc.RpcError as e:
+                print("RPC error:", e)
+
+        elif lines[0] == "database":
+            try:
+                response = stub.GetDatabases(chat_pb2.GetDatabasesRequest())
+                if response.status == chat_pb2.Status.SUCCESS:
+                    new_subdir = "Database_test"
+                    output_dir = os.path.join("Databases", new_subdir)
+                    os.makedirs(output_dir, exist_ok=True)
+                    password_database_path = os.path.join(output_dir, "passwords.db")
+                    message_database_path = os.path.join(output_dir, "messages.db")
+                    with open(password_database_path, "wb") as f:
+                        f.write(response.password_database)
+                    with open(message_database_path, "wb") as f:
+                        f.write(response.message_database)
+
+                else:
+                    print("Failed to Retrieve Databases")
             except grpc.RpcError as e:
                 print("RPC error:", e)
 
