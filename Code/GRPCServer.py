@@ -7,6 +7,7 @@ import signal
 import sys
 import os
 import shutil
+import subprocess
 
 import grpc
 import chat_pb2
@@ -14,8 +15,23 @@ import chat_pb2_grpc
 from Constants import DATABASE_DIRECTORY, PASSWORD_DATABASE_SCHEMA, MESSAGES_DATABASE_SCHEMA
 
 class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
-    def __init__(self, password_database_path, message_database_path):
+    def __init__(self, address, leader_stub, process_list, password_database_path, message_database_path):
         self.online_username = {}
+        self.process_list = process_list
+        self.address = address
+
+        if leader_stub != None:
+            response = leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest())
+            if response.status == chat_pb2.Status.SUCCESS:
+                new_subdir = f"Database_{address}"
+                output_dir = os.path.join("Databases", new_subdir)
+                os.makedirs(output_dir, exist_ok=True)
+                password_database_path = os.path.join(output_dir, "passwords.db")
+                message_database_path = os.path.join(output_dir, "messages.db")
+                with open(password_database_path, "wb") as f:
+                    f.write(response.password_database)
+                with open(message_database_path, "wb") as f:
+                    f.write(response.message_database)
 
         self.password_database_path = password_database_path
         self.message_database_path = message_database_path
@@ -215,13 +231,29 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
                                              password_database=serialized_password_database, 
                                              message_database=serialized_message_database)
+    
+    def Heartbeat(self, request, context):
+        return chat_pb2.HeartbeatResponse(status=chat_pb2.Status.SUCCESS)
 
 def RenameDatabaseDirectory(current_name):
-    rename = os.path.join(DATABASE_DIRECTORY, "Database_Master")
+    rename = os.path.join(DATABASE_DIRECTORY, "Database_Leader")
+    if current_name == rename:
+        return current_name
     if os.path.exists(rename):
         shutil.rmtree(rename)
     os.rename(current_name, rename)
     return rename
+
+def DeleteDatabaseDirectory(protected="Database_Leader"):
+    instance_directories = [
+        os.path.join(DATABASE_DIRECTORY, instances)
+        for instances in os.listdir(DATABASE_DIRECTORY)
+        if os.path.isdir(os.path.join(DATABASE_DIRECTORY, instances))
+    ]
+    protected = os.path.join(DATABASE_DIRECTORY, protected)
+    for subdir in instance_directories:
+        if subdir != protected:
+            shutil.rmtree(subdir)
 
 def MostRecentDatabase():
     instance_directories = [
@@ -243,23 +275,49 @@ def MostRecentDatabase():
 
 if __name__ == '__main__':
      # Confirm validity of commandline arguments
-    if len(sys.argv) != 3:
-        print("Usage: python server.py HOSTNAME DATABASE_PORTNAME")
+    if len(sys.argv) < 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
         sys.exit(1)
-    host, port = sys.argv[1], sys.argv[2]
+    address, other_count = sys.argv[1], int(sys.argv[2])
+    if len(sys.argv) != other_count + 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
+        sys.exit(1)
+    others = sys.argv[3:]
+    print("Other Processes", others)
 
-    database_directory = MostRecentDatabase()
-    password_database_path = os.path.join(database_directory, "passwords.db")
-    message_database_path = os.path.join(database_directory, "messages.db")
+    process_list = others + [address]
+    process_list.sort()
 
-    if not (os.path.isfile(password_database_path) and os.path.isfile(message_database_path)):
-        raise Exception(f"Missing messages.db or passwords.db in {database_directory}")
+    password_database_path = None
+    message_database_path = None
+    leader_stub = None
+
+    # If smallest address, then assigned to be the leader, choose most recent database
+    if address == process_list[0]:
+        database_directory = MostRecentDatabase()
+        password_database_path = os.path.join(database_directory, "passwords.db")
+        message_database_path = os.path.join(database_directory, "messages.db")
+
+        if not (os.path.isfile(password_database_path) and os.path.isfile(message_database_path)):
+            raise Exception(f"Missing messages.db or passwords.db in {database_directory}")
+    else: # Establish a connection to the leader
+        while True:
+            try:
+                channel = grpc.insecure_channel(f"{process_list[0]}")
+                leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
+                # Wait for the channel to be ready. Adjust the timeout as needed.
+                grpc.channel_ready_future(channel).result(timeout=1)
+                print(f"{address} connected to leader {process_list[0]}")
+                break 
+            except grpc.FutureTimeoutError:
+                time.sleep(0.1)
+
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
-    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(password_database_path, message_database_path), server)
-    server.add_insecure_port(f"{host}:{port}")
+    chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(address, leader_stub, process_list, password_database_path, message_database_path), server)
+    server.add_insecure_port(f"{address}")
     server.start()
-    print(f"gRPC Server started on {host}:{port}")
+    print(f"gRPC Server started on {address}")
     try:
         while True:
             time.sleep(86400)

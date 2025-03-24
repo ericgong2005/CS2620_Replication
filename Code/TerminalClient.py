@@ -269,3 +269,12 @@ if __name__ == "__main__":
     
     while True:
         client_login(stub)
+
+# Example code for subprocess
+# import subprocess
+# import sys
+
+# def run_script_in_new_process():
+#     command = [sys.executable, 'script.py', 'arg1', 'arg2']
+#     process = subprocess.Popen(command)
+#     process.wait() # wait for completion

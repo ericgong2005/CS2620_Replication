@@ -145,6 +145,11 @@ message GetDatabasesResponse {
   bytes message_database = 3;
 }
 
+message HeartbeatRequest {}
+message HeartbeatResponse {
+  Status status = 1;
+}
+
 
 // --- Service Definition ---
 
@@ -167,4 +172,5 @@ service ChatService {
 
   // Replication
   rpc GetDatabases(GetDatabasesRequest) returns (GetDatabasesResponse);
+  rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
 }
