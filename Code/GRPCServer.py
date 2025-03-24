@@ -246,23 +246,21 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             self.process_list = self.process_list[1:]
             self.leader_stub = None
             print(f"Finding leader from {self.process_list}")
-            potential_leader = self.process_list[0]
             while self.leader_stub == None:
-                if self.address == potential_leader: # You are the leader
+                if self.address == self.process_list[0]: # You are the leader
                     self.leader_stub = None
                     print("I am the New Leader")
                     return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.SUCCESS, leader_address=self.address)
                 try:
-                    channel = grpc.insecure_channel(potential_leader)
+                    channel = grpc.insecure_channel(self.process_list[0])
                     self.leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
                     # 1 second to connect to potential new leader
                     grpc.channel_ready_future(channel).result(timeout=1)
-                    print(f"{self.address} connected to leader {potential_leader}")
+                    print(f"{self.address} connected to leader {self.process_list[0]}")
                     break
                 except (grpc._channel._InactiveRpcError, grpc.FutureTimeoutError):
                     self.leader_stub = None
                     self.process_list = self.process_list[1:]
-                    potential_leader = self.process_list[0]
             if self.leader_stub == None:  # Could not find new leader
                 print("Could not find new leader")
                 sys.exit(1)
@@ -272,7 +270,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 except grpc._channel._InactiveRpcError:
                     print("Could not find new leader")
                     sys.exit(1)
-            return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.PENDING, leader_address=potential_leader)
+            return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.PENDING, leader_address=self.process_list[0])
 
 def RenameDatabaseDirectory(current_name):
     rename = os.path.join(DATABASE_DIRECTORY, "Database_Leader")

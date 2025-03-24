@@ -1,5 +1,13 @@
 # Engineering Notebook
 
+## Heartbeat Ideas:
+ - Currently, everyone is sending a hearbeat request to the leader, via the loop in main
+ - This allows the others to discover when the leader is dead
+ - However, for the leader to know who is sending heartbeat requests, we need to include address in the heartbeat request
+ - Another way would be for the leader to heartbeat all the followers, this would allow the leader to boot up new processes
+ - Then, the followers would need to track the most recent communication from the leader, which might be problematic if the leader is slowed down (ie: timing based tracking)
+ - It might be better to keep the followers sending the heartbeats periodically, and the leader can track who is alive based on recieved heartbeats. the leader can maintain a list of "most recent communications", and declare death on followers who havent heartbeated for a certain duration.
+
 ## Initial Ideas:
  - Use gRPC for simplicity of design, and ease of expansion and adding new commands
  - Have a single leader process handle all client communications. This removes the complications of passing to the leader
