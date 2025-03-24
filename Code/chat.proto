@@ -145,9 +145,20 @@ message GetDatabasesResponse {
   bytes message_database = 3;
 }
 
+// Heartbeat
 message HeartbeatRequest {}
 message HeartbeatResponse {
   Status status = 1;
+}
+
+//Inform leader death. Check if dead
+// If not dead, respond with ERROR
+// If dead and now leader, respond with SUCCESS, self address
+// If dead and not leader, respond with PENDING
+message LeaderDeathRequest {}
+message LeaderDeathResponse {
+  Status status = 1;
+  string leader_address = 2;
 }
 
 
@@ -173,4 +184,5 @@ service ChatService {
   // Replication
   rpc GetDatabases(GetDatabasesRequest) returns (GetDatabasesResponse);
   rpc Heartbeat(HeartbeatRequest) returns (HeartbeatResponse);
+  rpc LeaderDeath(LeaderDeathRequest) returns (LeaderDeathResponse);
 }

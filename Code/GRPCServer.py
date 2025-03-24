@@ -19,6 +19,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         self.online_username = {}
         self.process_list = process_list
         self.address = address
+        self.leader_stub = leader_stub
 
         if leader_stub != None:
             response = leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest())
@@ -234,6 +235,44 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     
     def Heartbeat(self, request, context):
         return chat_pb2.HeartbeatResponse(status=chat_pb2.Status.SUCCESS)
+    
+    def LeaderDeath(self, request, context):
+        try:
+            # If you are the leader (leader_stub == None), you are alive, otherwise, ping the leader
+            if self.leader_stub != None:
+                self.leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+            return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.ERROR, leader_address=self.process_list[0])
+        except grpc._channel._InactiveRpcError: # Leader confirmed dead, find new leader
+            self.process_list = self.process_list[1:]
+            self.leader_stub = None
+            print(f"Finding leader from {self.process_list}")
+            potential_leader = self.process_list[0]
+            while self.leader_stub == None:
+                if self.address == potential_leader: # You are the leader
+                    self.leader_stub = None
+                    print("I am the New Leader")
+                    return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.SUCCESS, leader_address=self.address)
+                try:
+                    channel = grpc.insecure_channel(potential_leader)
+                    self.leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
+                    # 1 second to connect to potential new leader
+                    grpc.channel_ready_future(channel).result(timeout=1)
+                    print(f"{self.address} connected to leader {potential_leader}")
+                    break
+                except (grpc._channel._InactiveRpcError, grpc.FutureTimeoutError):
+                    self.leader_stub = None
+                    self.process_list = self.process_list[1:]
+                    potential_leader = self.process_list[0]
+            if self.leader_stub == None:  # Could not find new leader
+                print("Could not find new leader")
+                sys.exit(1)
+            else: # Confirm the leader
+                try:
+                    self.leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+                except grpc._channel._InactiveRpcError:
+                    print("Could not find new leader")
+                    sys.exit(1)
+            return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.PENDING, leader_address=potential_leader)
 
 def RenameDatabaseDirectory(current_name):
     rename = os.path.join(DATABASE_DIRECTORY, "Database_Leader")
@@ -294,6 +333,7 @@ if __name__ == '__main__':
 
     # If smallest address, then assigned to be the leader, choose most recent database
     if address == process_list[0]:
+        print("I am the Leader")
         database_directory = MostRecentDatabase()
         password_database_path = os.path.join(database_directory, "passwords.db")
         message_database_path = os.path.join(database_directory, "messages.db")
@@ -305,7 +345,6 @@ if __name__ == '__main__':
             try:
                 channel = grpc.insecure_channel(f"{process_list[0]}")
                 leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
-                # Wait for the channel to be ready. Adjust the timeout as needed.
                 grpc.channel_ready_future(channel).result(timeout=1)
                 print(f"{address} connected to leader {process_list[0]}")
                 break 
@@ -315,11 +354,42 @@ if __name__ == '__main__':
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(address, leader_stub, process_list, password_database_path, message_database_path), server)
-    server.add_insecure_port(f"{address}")
+    server.add_insecure_port(address)
     server.start()
     print(f"gRPC Server started on {address}")
     try:
+        channel = grpc.insecure_channel(address)
+        self_stub = chat_pb2_grpc.ChatServiceStub(channel)
+        grpc.channel_ready_future(channel).result(timeout=1)
+        print("Stub to self established")
+        if leader_stub == None:
+            leader_stub = self_stub
         while True:
-            time.sleep(86400)
+            time.sleep(0.1)
+            try:
+                leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+            except grpc._channel._InactiveRpcError: # Leader has died!
+                print("Detected Leader Death")
+                if leader_stub == self_stub:
+                    sys.exit(1)
+                response = self_stub.LeaderDeath(chat_pb2.LeaderDeathRequest())
+                if response.status == chat_pb2.Status.ERROR:
+                    print("Lost connection to leader")
+                    server.stop(0)
+                    sys.exit(1)
+                elif response.status == chat_pb2.Status.SUCCESS:
+                    print("I confirm I am the new leader")
+                    leader_stub = self_stub
+                else:
+                    try:
+                        channel = grpc.insecure_channel(response.leader_address)
+                        leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
+                        # 1 second to connect to new leader
+                        grpc.channel_ready_future(channel).result(timeout=1)
+                        print(f"Monitor on {address} connected to leader {response.leader_address}")
+                    except grpc.FutureTimeoutError:
+                        print("Failed to Connect to New Leader")
+                        server.stop(0)
+                        sys.exit(1)
     except KeyboardInterrupt:
         server.stop(0)

@@ -106,6 +106,11 @@ class ChatServiceStub(object):
                 request_serializer=chat__pb2.HeartbeatRequest.SerializeToString,
                 response_deserializer=chat__pb2.HeartbeatResponse.FromString,
                 _registered_method=True)
+        self.LeaderDeath = channel.unary_unary(
+                '/chat.ChatService/LeaderDeath',
+                request_serializer=chat__pb2.LeaderDeathRequest.SerializeToString,
+                response_deserializer=chat__pb2.LeaderDeathResponse.FromString,
+                _registered_method=True)
 
 
 class ChatServiceServicer(object):
@@ -200,6 +205,12 @@ class ChatServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def LeaderDeath(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_ChatServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -272,6 +283,11 @@ def add_ChatServiceServicer_to_server(servicer, server):
                     servicer.Heartbeat,
                     request_deserializer=chat__pb2.HeartbeatRequest.FromString,
                     response_serializer=chat__pb2.HeartbeatResponse.SerializeToString,
+            ),
+            'LeaderDeath': grpc.unary_unary_rpc_method_handler(
+                    servicer.LeaderDeath,
+                    request_deserializer=chat__pb2.LeaderDeathRequest.FromString,
+                    response_serializer=chat__pb2.LeaderDeathResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -654,6 +670,33 @@ class ChatService(object):
             '/chat.ChatService/Heartbeat',
             chat__pb2.HeartbeatRequest.SerializeToString,
             chat__pb2.HeartbeatResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def LeaderDeath(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/chat.ChatService/LeaderDeath',
+            chat__pb2.LeaderDeathRequest.SerializeToString,
+            chat__pb2.LeaderDeathResponse.FromString,
             options,
             channel_credentials,
             insecure,
