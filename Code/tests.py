@@ -47,6 +47,7 @@ def test_logging_in():
     assert response.status == chat_pb2.Status.SUCCESS
     assert response.num_unread_msgs == 0
     assert response.num_total_msgs == 0
+    assert response.process_list == ["127.0.0.1:2620"]
 
     # Confirm double login
     response = stub.ConfirmLogin(chat_pb2.ConfirmLoginRequest(username="a"))
@@ -61,6 +62,7 @@ def test_logging_in():
     assert response.status == chat_pb2.Status.SUCCESS
     assert response.num_unread_msgs == 0
     assert response.num_total_msgs == 0
+    assert response.process_list == ["127.0.0.1:2620"]
 
     channel.close()
 
@@ -95,6 +97,7 @@ def test_messages():
     assert len(response.messages) == 2
     one_id = response.messages[0].id
     next_id = response.messages[1].id
+    assert response.process_list == ["127.0.0.1:2620"]
 
     # Delete message
     response = stub.DeleteMessage(chat_pb2.DeleteMessageRequest(message_id=[one_id]))
@@ -108,11 +111,13 @@ def test_messages():
     response = stub.GetMessage(chat_pb2.GetMessageRequest(offset=0, limit=10, unread_only=True, username="b"))
     assert response.status == chat_pb2.Status.SUCCESS
     assert len(response.messages) == 0
+    assert response.process_list == ["127.0.0.1:2620"]
 
     # Get Read message
     response = stub.GetMessage(chat_pb2.GetMessageRequest(offset=0, limit=10, unread_only=False, username="b"))
     assert response.status == chat_pb2.Status.SUCCESS
     assert len(response.messages) == 1
+    assert response.process_list == ["127.0.0.1:2620"]
 
     channel.close()
 

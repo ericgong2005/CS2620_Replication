@@ -13,9 +13,36 @@ import chat_pb2, chat_pb2_grpc
 
 # run python client.py HOSTNAME PORTNAME
 
+def new_leader_stub(process_list):
+    process_list = process_list[1:]
+    leader_stub = None
+    print(f"Finding leader from {process_list}")
+    while (leader_stub == None) and (len(process_list) > 0):
+        try:
+            channel = grpc.insecure_channel(process_list[0])
+            leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
+            # 1 second to connect to potential new leader
+            grpc.channel_ready_future(channel).result(timeout=1)
+            print(f"Client connected to leader {process_list[0]}")
+            break
+        except (grpc._channel._InactiveRpcError, grpc.FutureTimeoutError):
+            leader_stub = None
+            process_list = process_list[1:]
+    if leader_stub == None:  # Could not find new leader
+        messagebox.showerror("Error", "Server Not Found, Exit the Application")
+        sys.exit(1)
+    else: # Confirm the leader
+        try:
+            leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("Error", "Server Not Found, Exit the Application")
+            sys.exit(1)
+    return (leader_stub, process_list)
+
 class LoginClient:
-    def __init__(self, stub):
+    def __init__(self, stub, process_list):
         self.stub = stub
+        self.process_list = process_list
         self.window = tk.Tk()
         self.window.geometry("500x200")
         self.window.title("Login")
@@ -48,6 +75,10 @@ class LoginClient:
         # Call CheckUsername RPC
         try:
             response = self.stub.CheckUsername(chat_pb2.CheckUsernameRequest(username=username))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -63,7 +94,7 @@ class LoginClient:
         elif response.status == chat_pb2.NO_MATCH:
             messagebox.showerror("Login Failed", "No such username exists! Please register for an account.")
             self.window.destroy()
-            RegisterClient(self.stub)
+            RegisterClient(self.stub, self.process_list)
         else:
             messagebox.showerror("Error", "Unexpected server response.")
             return
@@ -82,6 +113,10 @@ class LoginClient:
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         try:
             response = self.stub.CheckPassword(chat_pb2.CheckPasswordRequest(username=username, password=hashed_password))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -89,7 +124,7 @@ class LoginClient:
         if response.status == chat_pb2.MATCH:
             messagebox.showinfo("Success", "Currently Logging In")
             self.window.destroy()
-            UserClient(self.stub, username)
+            UserClient(self.stub, self.process_list, username)
         elif response.status == chat_pb2.NO_MATCH:
             messagebox.showerror("Login Failed", "Wrong password!")
             return
@@ -102,8 +137,9 @@ class LoginClient:
 
 
 class RegisterClient:
-    def __init__(self, stub):
+    def __init__(self, stub, process_list):
         self.stub = stub
+        self.process_list = process_list
         self.window = tk.Tk()
         self.window.geometry("500x200")
         self.window.title("Register")
@@ -163,6 +199,10 @@ class RegisterClient:
         hashed_password = hashlib.sha256(password.encode()).hexdigest()
         try:
             response = self.stub.CreateUser(chat_pb2.CreateUserRequest(username=username, password=hashed_password))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -170,7 +210,7 @@ class RegisterClient:
         if response.status == chat_pb2.SUCCESS:
             messagebox.showinfo("Success", "Registration Successful!")
             self.window.destroy()
-            LoginClient(self.stub)
+            LoginClient(self.stub, self.process_list)
         elif response.status == chat_pb2.MATCH:
             messagebox.showwarning("Error", "Username already exists.")
             return
@@ -185,8 +225,9 @@ class RegisterClient:
 class UserClient:
     ACCOUNTS_LIST_LEN = 19
 
-    def __init__(self, stub, username):
+    def __init__(self, stub, process_list, username):
         self.stub = stub
+        self.process_list = process_list
         self.username = username
         self.accounts = []
         self.accounts_offset = 0
@@ -286,10 +327,16 @@ class UserClient:
         # Call ConfirmLogin RPC to verify status and get unread/total messages
         try:
             response = self.stub.ConfirmLogin(chat_pb2.ConfirmLoginRequest(username=self.username))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             self.close_connection()
             return
+        
+        self.process_list = response.process_list
 
         if response.status == chat_pb2.SUCCESS:
             messagebox.showinfo("Sucess", "Logged In")
@@ -299,12 +346,12 @@ class UserClient:
         elif response.status == chat_pb2.MATCH:
             messagebox.showerror("Error", "Already Logged In Elsewhere")
             self.window.destroy()
-            LoginClient(self.stub)
+            LoginClient(self.stub, self.process_list)
             return
         else:
             messagebox.showerror("Server Error", "Unexpected login response.")
             self.window.destroy()
-            LoginClient(self.stub)
+            LoginClient(self.stub, self.process_list)
             return
 
     def query_accounts(self):
@@ -315,6 +362,10 @@ class UserClient:
 
         try:
             response = self.stub.GetUsers(chat_pb2.GetUsersRequest(query=query))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -389,10 +440,16 @@ class UserClient:
                 response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
                     offset=0, limit=-1, unread_only=False, username=self.username
                 ))
+            except grpc._channel._InactiveRpcError:
+                messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+                self.stub, self.process_list = new_leader_stub(self.process_list)
+                return
             except grpc.RpcError as e:
                 messagebox.showerror("gRPC Error", str(e))
                 return
             if response.status == chat_pb2.SUCCESS:
+                # Update process_list
+                self.process_list = response.process_list
                 # visually update limit
                 self.message_count_entry.delete(0, tk.END)
                 self.message_count_entry.insert(0, limit)
@@ -410,11 +467,16 @@ class UserClient:
                 response = self.stub.GetMessage(chat_pb2.GetMessageRequest(
                     offset=0, limit=-1, unread_only =False, username=self.username
                 ))
+            except grpc._channel._InactiveRpcError:
+                messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+                self.stub, self.process_list = new_leader_stub(self.process_list)
+                return
             except grpc.RpcError as e:
                 messagebox.showerror("gRPC Error", str(e))
                 self.close_connection()
                 return
             if response.status == chat_pb2.SUCCESS:
+                self.process_list = response.process_list
                 num_new_messages = len(response.messages) - self.message_count
                 if num_new_messages == 0:
                     return
@@ -471,6 +533,10 @@ class UserClient:
                 if response.status == chat_pb2.SUCCESS:
                     self.unread_count -= 1
                     self.query_messages()
+            except grpc._channel._InactiveRpcError:
+                messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+                self.stub, self.process_list = new_leader_stub(self.process_list)
+                return
             except grpc.RpcError as e:
                 messagebox.showerror("gRPC Error", str(e))
                 return
@@ -499,6 +565,10 @@ class UserClient:
         )
         try:
             response = self.stub.SendMessage(chat_pb2.SendMessageRequest(message=message_obj))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -557,6 +627,10 @@ class UserClient:
     
         try:
             response = self.stub.DeleteMessage(chat_pb2.DeleteMessageRequest(message_id=message_ids))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
@@ -567,12 +641,16 @@ class UserClient:
         """Sends server request to log user out"""
         try:
             response = self.stub.ConfirmLogout(chat_pb2.ConfirmLogoutRequest(username=self.username))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
         if response.status == chat_pb2.SUCCESS:
             self.close_connection()
-            LoginClient(self.stub)
+            LoginClient(self.stub, self.process_list)
         else:
             messagebox.showerror("Error", "Logout failed")
     
@@ -584,24 +662,33 @@ class UserClient:
 
         try:
             response = self.stub.DeleteUser(chat_pb2.DeleteUserRequest(username=self.username))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             return
         if response.status == chat_pb2.SUCCESS:
             messagebox.showinfo("Account Deleted", "Your account has been deleted.")
             self.close_connection()
-            LoginClient(self.stub)
+            LoginClient(self.stub, self.process_list)
         else:
             messagebox.showerror("Error", "Account deletion failed")
 
     def check_incoming_messages(self):
         self.query_messages(active=False)
+        print(f"Check messages, knowing server processes {self.process_list}")
         # Schedule check_incoming_messages to run again after 500 milliseconds
         self.window.after(500, self.check_incoming_messages)
 
     def close_connection(self):
         try:
             response = self.stub.ConfirmLogout(chat_pb2.ConfirmLogoutRequest(username=self.username))
+        except grpc._channel._InactiveRpcError:
+            messagebox.showerror("gRPC Connection Lost", "Reconnecting to Server...")
+            self.stub, self.process_list = new_leader_stub(self.process_list)
+            return
         except grpc.RpcError as e:
             messagebox.showerror("gRPC Error", str(e))
             self.window.destroy()
@@ -612,11 +699,20 @@ class UserClient:
             messagebox.showerror("Error", "Logout failed")
 
 if __name__ == "__main__":
-    if len(sys.argv) != 3:
-        print("Usage: python client.py HOSTNAME PORTNAME")
-        exit(1)
-    host, port = sys.argv[1], int(sys.argv[2])
-    channel = grpc.insecure_channel(f"{host}:{port}")
+    if len(sys.argv) < 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
+        sys.exit(1)
+    address, other_count = sys.argv[1], int(sys.argv[2])
+    if len(sys.argv) != other_count + 3:
+        print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
+        sys.exit(1)
+    others = sys.argv[3:]
+
+    # Create a gRPC channel and stub.
+    channel = grpc.insecure_channel(address)
     stub = chat_pb2_grpc.ChatServiceStub(channel)
 
-    LoginClient(stub)
+    process_list = others + [address]
+    process_list.sort()
+
+    LoginClient(stub, process_list)

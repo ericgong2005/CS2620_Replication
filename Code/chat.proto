@@ -51,6 +51,7 @@ message ConfirmLoginResponse {
   Status status = 1;
   int64 num_unread_msgs = 2;
   int64 num_total_msgs = 3;
+  repeated string process_list = 4;
 }
 
 // Confirm logout (and mark user as offline). WRITE
@@ -108,6 +109,7 @@ message GetMessageRequest {
 message GetMessageResponse {
   Status status = 1;
   repeated MessageObject messages = 2;
+  repeated string process_list = 3;
 }
 
 // Confirm that a message has been read. WRITE
@@ -167,7 +169,8 @@ message PushDatabaseResponse {
 // Heartbeat
 message HeartbeatRequest {}
 message HeartbeatResponse {
-  Status status = 1;
+  repeated string online_username = 1;
+  repeated string process_list = 2;
 }
 
 //Inform leader death. Check if dead

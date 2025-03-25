@@ -161,12 +161,14 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.ConfirmLoginResponse(
             status=chat_pb2.Status.ERROR, 
             num_unread_msgs=0, 
-            num_total_msgs=0)
+            num_total_msgs=0,
+            process_list=self.process_list)
         elif request.username in self.online_username:
             return chat_pb2.ConfirmLoginResponse(
             status=chat_pb2.Status.MATCH, 
             num_unread_msgs=0, 
-            num_total_msgs=0)
+            num_total_msgs=0,
+            process_list=self.process_list)
         else:
             self.online_username.append(request.username)
 
@@ -181,7 +183,8 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             return chat_pb2.ConfirmLoginResponse(
                 status=chat_pb2.Status.SUCCESS, 
                 num_unread_msgs=unread, 
-                num_total_msgs=total
+                num_total_msgs=total,
+                process_list=self.process_list
             )
 
     def ConfirmLogout(self, request, context):
@@ -248,7 +251,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             read = bool(tuple[4]),
             subject = tuple[5],
             body = tuple[6]))
-        return chat_pb2.GetMessageResponse(status=chat_pb2.Status.SUCCESS, messages=messages)
+        return chat_pb2.GetMessageResponse(status=chat_pb2.Status.SUCCESS, messages=messages, process_list=self.process_list)
 
     def ConfirmRead(self, request, context):
         print(f"Confirming Read given {request}")
@@ -315,7 +318,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         return chat_pb2.PushDatabaseResponse(status=chat_pb2.Status.SUCCESS)
     
     def Heartbeat(self, request, context):
-        return chat_pb2.HeartbeatResponse(status=chat_pb2.Status.SUCCESS)
+        return chat_pb2.HeartbeatResponse(online_username=self.online_username, process_list=self.process_list)
     
     def LeaderDeath(self, request, context):
         try:
@@ -429,7 +432,6 @@ if __name__ == '__main__':
                 break 
             except grpc.FutureTimeoutError:
                 time.sleep(0.1)
-
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(address, leader_stub, process_list, password_database_path, message_database_path), server)
