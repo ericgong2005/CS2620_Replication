@@ -35,9 +35,11 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                         f.write(response.password_database)
                     with open(message_database_path, "wb") as f:
                         f.write(response.message_database)
+                else:
+                    raise Exception("Rejected by Leader")
             except Exception as e:
                 print(f"{self.address} Encountered {e} upon setup, terminating")
-                sys.exit(1)
+                sys.exit(0)
 
         self.password_database_path = password_database_path
         self.message_database_path = message_database_path
@@ -297,17 +299,13 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     def GetDatabases(self, request, context):
         print(f"GetDatabase Request from {request.origin}")
         if request.origin != "Client":
-            if request.origin not in self.process_list:
-                self.process_list.append(request.origin)
-                self.process_list.sort()
-                print(f"New Process list {self.process_list}")
-                if self.process_list[0] != self.address:
-                    print("Rejecting invalid Follower")
-                    self.process_list.remove(request.origin)
-                    return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.ERROR,
-                                                         password_database= None, message_database= None, 
-                                                         online_username= None, process_list= None)
-                print(f"Leader {self.address} manually added {request.origin}")
+            if (request.origin in self.process_list) or (request.origin < self.address):
+                return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.ERROR,
+                                                            password_database= None, message_database= None, 
+                                                            online_username= None, process_list= None)
+            self.process_list.append(request.origin)
+            self.process_list.sort()
+            print(f"Leader {self.address} manually added {request.origin} to {self.process_list}")
 
         serialized_password_database, serialized_message_database = self.SerializeDatabase()
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
