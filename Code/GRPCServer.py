@@ -1,6 +1,5 @@
 import time
 from concurrent import futures
-import queue
 import sqlite3
 import atexit
 import signal
@@ -23,17 +22,23 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         self.follower_stubs = {}
 
         if self.leader_stub != None:
-            response = self.leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest())
-            if response.status == chat_pb2.Status.SUCCESS:
-                new_subdir = f"Database_{address}"
-                output_dir = os.path.join("Databases", new_subdir)
-                os.makedirs(output_dir, exist_ok=True)
-                password_database_path = os.path.join(output_dir, "passwords.db")
-                message_database_path = os.path.join(output_dir, "messages.db")
-                with open(password_database_path, "wb") as f:
-                    f.write(response.password_database)
-                with open(message_database_path, "wb") as f:
-                    f.write(response.message_database)
+            try:
+                response = self.leader_stub.GetDatabases(chat_pb2.GetDatabasesRequest(origin=self.address))
+                if response.status == chat_pb2.Status.SUCCESS:
+                    self.process_list = response.process_list
+                    self.online_username = response.online_username
+                    new_subdir = f"Database_{address}"
+                    output_dir = os.path.join("Databases", new_subdir)
+                    os.makedirs(output_dir, exist_ok=True)
+                    password_database_path = os.path.join(output_dir, "passwords.db")
+                    message_database_path = os.path.join(output_dir, "messages.db")
+                    with open(password_database_path, "wb") as f:
+                        f.write(response.password_database)
+                    with open(message_database_path, "wb") as f:
+                        f.write(response.message_database)
+            except Exception as e:
+                print(f"{self.address} Encountered {e} upon setup, terminating")
+                sys.exit(1)
 
         self.password_database_path = password_database_path
         self.message_database_path = message_database_path
@@ -74,9 +79,9 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
         
         self.open()
         return (serialized_password_database, serialized_message_database)
-
+        
     def PushChanges(self, database=False):
-        print(f"Begin Pushing Changes to {self.process_list[1:]}")
+        print(f"{self.address} Pushing Changes to {self.process_list[1:]}")
         if self.leader_stub != None: # Error, should not be pushing changes as follower
             print("Inappropriate Change pushing")
             sys.exit(1)
@@ -115,7 +120,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 success = False
         
         print(f"\tFinished pushing to {self.process_list[1:]}")
-        
+
         return success
 
     '''
@@ -291,10 +296,26 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
     
     # Replication
     def GetDatabases(self, request, context):
+        print(f"GetDatabase Request from {request.origin}")
+        if request.origin != "Client":
+            if request.origin not in self.process_list:
+                self.process_list.append(request.origin)
+                self.process_list.sort()
+                print(f"New Process list {self.process_list}")
+                if self.process_list[0] != self.address:
+                    print("Rejecting invalid Follower")
+                    self.process_list.remove(request.origin)
+                    return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.ERROR,
+                                                         password_database= None, message_database= None, 
+                                                         online_username= None, process_list= None)
+                print(f"Leader {self.address} manually added {request.origin}")
+
         serialized_password_database, serialized_message_database = self.SerializeDatabase()
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
                                              password_database=serialized_password_database, 
-                                             message_database=serialized_message_database)
+                                             message_database=serialized_message_database,
+                                             online_username=self.online_username,
+                                             process_list=self.process_list)
     
     def PushState(self, request, context):
         print(f"Recieved State Push")
@@ -334,6 +355,7 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
                 if self.address == self.process_list[0]: # You are the leader
                     self.leader_stub = None
                     print("I am the New Leader")
+                    self.PushChanges()
                     return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.SUCCESS, leader_address=self.address)
                 try:
                     channel = grpc.insecure_channel(self.process_list[0])
@@ -404,7 +426,7 @@ if __name__ == '__main__':
         print("Usage: python server.py 'SELFHOST:SELFPORT' '# of Others' 'Other HOST:PORT'")
         sys.exit(1)
     others = sys.argv[3:]
-    print("Other Processes", others)
+    print(f"{address} has Other Processes", others)
 
     process_list = others + [address]
     process_list.sort()
@@ -415,7 +437,7 @@ if __name__ == '__main__':
 
     # If smallest address, then assigned to be the leader, choose most recent database
     if address == process_list[0]:
-        print("I am the Leader")
+        print(f"I {address} am the Leader")
         database_directory = MostRecentDatabase()
         password_database_path = os.path.join(database_directory, "passwords.db")
         message_database_path = os.path.join(database_directory, "messages.db")
@@ -432,10 +454,11 @@ if __name__ == '__main__':
                 break 
             except grpc.FutureTimeoutError:
                 time.sleep(0.1)
+                print("Waiting to connect to Leader")
 
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=1))
     chat_pb2_grpc.add_ChatServiceServicer_to_server(ChatServiceServicer(address, leader_stub, process_list, password_database_path, message_database_path), server)
-    server.add_insecure_port(address)
+    port = server.add_insecure_port(address)
     server.start()
     print(f"gRPC Server started on {address}")
     try:
@@ -448,7 +471,8 @@ if __name__ == '__main__':
         while True:
             time.sleep(HEARTBEAT_INTERVAL)
             try:
-                leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+                response = leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+                process_list = response.process_list
             except grpc._channel._InactiveRpcError: # Leader has died!
                 print("Detected Leader Death")
                 if leader_stub == self_stub:

@@ -94,6 +94,7 @@ def client_user(stub, process_list, username):
                 if response.status == chat_pb2.Status.SUCCESS:
                     for msg in response.messages:
                         print(f"Message {msg.id} from {msg.sender} at {msg.time_sent}:\n {msg.subject}\n {msg.body}\n (Read: {msg.read})")
+                    process_list = response.process_list
                 else:
                     print("Failed to get messages.")
             except grpc._channel._InactiveRpcError:
@@ -236,7 +237,7 @@ def client_user(stub, process_list, username):
                 print("Usage: database database_name")
                 continue
             try:
-                response = stub.GetDatabases(chat_pb2.GetDatabasesRequest())
+                response = stub.GetDatabases(chat_pb2.GetDatabasesRequest(origin="Client"))
                 if response.status == chat_pb2.Status.SUCCESS:
                     new_subdir = f"Database_{lines[1]}"
                     output_dir = os.path.join("Databases", new_subdir)

@@ -1,16 +1,12 @@
 # May need to run chmod +x tests.sh
-
-# Make test director
-mkdir Databases/Test
-
 # Exit immediately if a command fails
 set -e  
 
 # Clear the databases by deleting them
-rm -f Databases/Test/messages.db
-rm -f Databases/Test/passwords.db
-touch Databases/Test/messages.db
-touch Databases/Test/passwords.db
+rm -f Databases/Database_Leader/messages.db
+rm -f Databases/Database_Leader/passwords.db
+touch Databases/Database_Leader/messages.db
+touch Databases/Database_Leader/passwords.db
 
 # Start the GRPC server in the background
 python GRPCServer.py 127.0.0.1:2620 0&
@@ -24,7 +20,7 @@ pytest tests.py
 kill $SERVER_PID
 
 # Clear the databases by deleting them
-rm -f Databases/Test/messages.db
-rm -f Databases/Test/passwords.db
-touch Databases/Test/messages.db
-touch Databases/Test/passwords.db
+rm -f Databases/Database_Leader/messages.db
+rm -f Databases/Database_Leader/passwords.db
+touch Databases/Database_Leader/messages.db
+touch Databases/Database_Leader/passwords.db

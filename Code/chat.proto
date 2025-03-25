@@ -140,11 +140,15 @@ message DeleteUserResponse {
 // --- Replication RPCs ---
 
 // Get a serialized copy of the database
-message GetDatabasesRequest {}
+message GetDatabasesRequest {
+  string origin = 1;
+}
 message GetDatabasesResponse {
   Status status = 1;
   bytes password_database = 2;
   bytes message_database = 3;
+  repeated string online_username = 4;
+  repeated string process_list = 5;
 }
 
 // Leader Push state to followers (online users, process_list)
