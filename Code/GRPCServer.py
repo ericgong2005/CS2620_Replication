@@ -6,7 +6,6 @@ import signal
 import sys
 import os
 import shutil
-import subprocess
 
 import grpc
 import chat_pb2
