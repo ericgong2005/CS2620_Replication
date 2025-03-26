@@ -308,6 +308,9 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             print(f"Leader {self.address} manually added {request.origin} to {self.process_list}")
 
         serialized_password_database, serialized_message_database = self.SerializeDatabase()
+
+        while not self.PushChanges(False) : pass # Push changes until consistency
+
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
                                              password_database=serialized_password_database, 
                                              message_database=serialized_message_database,
@@ -434,6 +437,9 @@ if __name__ == '__main__':
 
     # If smallest address, then assigned to be the leader, choose most recent database
     if address == process_list[0]:
+        if len(others) > 0:
+            print("Leader should have no other processes specified!")
+            sys.exit(1)
         print(f"I {address} am the Leader")
         database_directory = MostRecentDatabase()
         password_database_path = os.path.join(database_directory, "passwords.db")

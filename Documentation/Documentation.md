@@ -10,7 +10,7 @@
 ## Usage
 To start a client, run python GRPCClient.py (Leader Address), followed optionally by a number *n*, and *n* addresses indicating follower processes. (This second portion is optional, the leader will communicate followers with the client naturally)
 
-To start a server leader, run python GRPCServer.py (Leader Address), followed optionally by a number *n*, and *n* addresses indicating follower processes. Follower processes MUST have a lexicographically higher address, otherwise, the proccess will assume it is a follower and attempt to connect to the address that is lower (which it believes to be the leader)
+To start a server leader, run python GRPCServer.py (Leader Address), followed by the number 0.
 
 To start a server follower, run python GRPCServer.py (Follower Address), followed by a number *n*, and *n* addresses indicating the leader process and follower processes. The leader address must be specified, and followers can be specified optionally.
 
