@@ -308,9 +308,6 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             print(f"Leader {self.address} manually added {request.origin} to {self.process_list}")
 
         serialized_password_database, serialized_message_database = self.SerializeDatabase()
-
-        while not self.PushChanges(False) : pass # Push changes until consistency
-
         return chat_pb2.GetDatabasesResponse(status=chat_pb2.Status.SUCCESS,
                                              password_database=serialized_password_database, 
                                              message_database=serialized_message_database,
@@ -474,8 +471,8 @@ if __name__ == '__main__':
         while True:
             time.sleep(HEARTBEAT_INTERVAL)
             try:
-                response = leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
-                process_list = response.process_list
+                leader_response = leader_stub.Heartbeat(chat_pb2.HeartbeatRequest())
+                process_list = leader_response.process_list
             except grpc._channel._InactiveRpcError: # Leader has died!
                 print("Detected Leader Death")
                 if leader_stub == self_stub:
@@ -499,5 +496,13 @@ if __name__ == '__main__':
                         print("Failed to Connect to New Leader")
                         server.stop(0)
                         sys.exit(1)
+            try:
+                self_stub.PushState(chat_pb2.PushStateRequest(online_username=leader_response.online_username, 
+                                                              process_list=leader_response.process_list))
+            except Exception as e:
+                print(f"Encountered {e}")
+                server.stop(0)
+                sys.exit(1)
+
     except KeyboardInterrupt:
         server.stop(0)
