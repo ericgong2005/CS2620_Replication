@@ -1,5 +1,9 @@
 # Engineering Notebook
 
+## Bug Fixes:
+- Initially, a server process, upon startup, believes it is the leader if its address:portname is the lowest in the list of server processes. This gave us a problem because if a machine with a lower IP address than the leader starts a server process when specifying a leader to connect to, it still thinks it's the leader because its IP address is lower than the leader's. We fixed this by specifying that in order to start as a leader, a server process must not specify a different leader.
+- We also ran into an issue where the server would deadlock when the original leader was killed and it elected itself as the new leader. This happened because we were making a gRPC call within a gRPC call.
+
 ## Heartbeat Ideas:
  - Currently, everyone is sending a hearbeat request to the leader, via the loop in main
  - This allows the others to discover when the leader is dead
