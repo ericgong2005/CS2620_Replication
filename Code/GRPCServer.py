@@ -349,9 +349,11 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             self.leader_stub = None
             print(f"Finding leader from {self.process_list}")
             while self.leader_stub == None:
-                if self.address == self.process_list[0]: # You are the leader
+                if self.address == self.process_list[0] or len(self.process_list) == 0: # You are the leader
                     self.leader_stub = None
                     print("I am the New Leader")
+                    if len(self.process_list) == 0:
+                        self.process_list = [self.address]
                     self.PushChanges()
                     return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.SUCCESS, leader_address=self.address)
                 try:
