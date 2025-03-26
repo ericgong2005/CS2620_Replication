@@ -349,12 +349,9 @@ class ChatServiceServicer(chat_pb2_grpc.ChatServiceServicer):
             self.leader_stub = None
             print(f"Finding leader from {self.process_list}")
             while self.leader_stub == None:
-                if self.address == self.process_list[0] or len(self.process_list) == 0: # You are the leader
+                if self.address == self.process_list[0]: # You are the leader
                     self.leader_stub = None
                     print("I am the New Leader")
-                    if len(self.process_list) == 0:
-                        self.process_list = [self.address]
-                    self.PushChanges()
                     return chat_pb2.LeaderDeathResponse(status=chat_pb2.Status.SUCCESS, leader_address=self.address)
                 try:
                     channel = grpc.insecure_channel(self.process_list[0])
@@ -406,6 +403,10 @@ def MostRecentDatabase():
     
     if not instance_directories:
         raise Exception("No Databases present")
+    
+    for directory in instance_directories:
+        mod_time = os.path.getmtime(directory)
+        print(f"{directory} last modified on {time.ctime(mod_time)}")
 
     most_recent_instance = max(instance_directories, key=os.path.getmtime)
 
@@ -488,6 +489,7 @@ if __name__ == '__main__':
                     print("I confirm I am the new leader")
                     leader_stub = self_stub
                 else:
+                    print(f"Connecting to leader {response.leader_address}")
                     try:
                         channel = grpc.insecure_channel(response.leader_address)
                         leader_stub = chat_pb2_grpc.ChatServiceStub(channel)
@@ -498,13 +500,5 @@ if __name__ == '__main__':
                         print("Failed to Connect to New Leader")
                         server.stop(0)
                         sys.exit(1)
-            try:
-                self_stub.PushState(chat_pb2.PushStateRequest(online_username=leader_response.online_username, 
-                                                              process_list=leader_response.process_list))
-            except Exception as e:
-                print(f"Encountered {e}")
-                server.stop(0)
-                sys.exit(1)
-
     except KeyboardInterrupt:
         server.stop(0)
