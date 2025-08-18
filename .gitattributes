@@ -1,0 +1,3 @@
+# Exclude gRPC generated files
+Code/chat_pb2_grpc.py linguist-vendored
+Code/chat_pb2.py linguist-vendored
